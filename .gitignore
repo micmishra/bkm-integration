@@ -1,0 +1,33 @@
+# .NET build outputs
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# NuGet
+packages/
+*.nupkg
+project.lock.json
+
+# Secrets
+**/appsettings.Production.json
+**/appsettings.Secrets.json
+secrets.json
+
+# Logs
+logs/
+*.log
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Test results
+TestResults/
+coverage/
+
+# Publish output
+publish/
