@@ -1,0 +1,103 @@
+﻿# ──────────────────────────────────────────────────────────────────────────────
+# CI — runs on every push and pull-request to main/develop.
+#
+# What it does:
+#   1. Builds the solution in Release mode.
+#   2. Produces a pre-release .nupkg whose version is:
+#        <VersionPrefix>-ci.<run_number>+<short-sha>
+#        e.g.  1.0.0-ci.42+a3f8b2c
+#      This lets you install a specific CI build from a private feed for testing,
+#      while keeping it clearly below any stable release in NuGet version ordering.
+#   3. Uploads the .nupkg as a build artifact (available for 7 days).
+#
+# To push CI packages to a private feed, uncomment the last step and set the
+# NUGET_PRIVATE_FEED_URL and NUGET_PRIVATE_API_KEY secrets in your repo settings.
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'src/**'
+      - 'Directory.Build.props'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'src/**'
+      - 'Directory.Build.props'
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  SOLUTION: 'BKM.Utility.sln'
+  PACKAGE_PROJECT: 'src/BKM.Utility/BKM.Utility.csproj'
+  NUPKG_DIR: nupkg
+
+jobs:
+  build-and-pack:
+    name: Build & Pack (CI pre-release)
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history needed for version tags
+
+      # ── .NET SDK ──────────────────────────────────────────────────────────
+      - name: Setup .NET ${{ env.DOTNET_VERSION }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      # ── Compute CI version suffix: ci.<run_number>+<short-sha> ───────────
+      - name: Compute CI version suffix
+        id: ver
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          SUFFIX="ci.${{ github.run_number }}+${SHORT_SHA}"
+          echo "suffix=${SUFFIX}" >> "$GITHUB_OUTPUT"
+          echo "CI version suffix: ${SUFFIX}"
+
+      # ── Restore ───────────────────────────────────────────────────────────
+      - name: Restore
+        run: dotnet restore ${{ env.SOLUTION }}
+
+      # ── Build ─────────────────────────────────────────────────────────────
+      - name: Build
+        run: |
+          dotnet build ${{ env.SOLUTION }} \
+            --configuration Release \
+            --no-restore \
+            -p:VersionSuffix="${{ steps.ver.outputs.suffix }}"
+
+      # ── Pack ──────────────────────────────────────────────────────────────
+      - name: Pack
+        run: |
+          dotnet pack ${{ env.PACKAGE_PROJECT }} \
+            --configuration Release \
+            --no-build \
+            --output ${{ env.NUPKG_DIR }} \
+            -p:VersionSuffix="${{ steps.ver.outputs.suffix }}"
+
+      # ── Upload artifact ───────────────────────────────────────────────────
+      - name: Upload nupkg artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nupkg-ci-${{ github.run_number }}
+          path: ${{ env.NUPKG_DIR }}/*.nupkg
+          retention-days: 7
+
+      # ── (Optional) Push to private NuGet feed ─────────────────────────────
+      # Uncomment and set NUGET_PRIVATE_FEED_URL + NUGET_PRIVATE_API_KEY secrets.
+      #
+      # - name: Push to private feed
+      #   if: github.event_name == 'push'
+      #   run: |
+      #     dotnet nuget push "${{ env.NUPKG_DIR }}/*.nupkg" \
+      #       --source "${{ secrets.NUGET_PRIVATE_FEED_URL }}" \
+      #       --api-key "${{ secrets.NUGET_PRIVATE_API_KEY }}" \
+      #       --skip-duplicate

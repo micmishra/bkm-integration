@@ -1,8 +1,8 @@
- f# BKM.Integration — Project Memory
+# BKM.Utility — Project Memory
 
-This file tracks every feature, design decision, and pattern established in BKM.Integration.
-Update it whenever a new feature is added. It is the single source of truth for onboarding
-and for generating any future documentation artefact.
+This file tracks every feature, design decision, and pattern established in BKM.Utility.
+Update it whenever a new feature is added or a structural decision is made.
+It is the single source of truth for onboarding and generating future documentation.
 
 ---
 
@@ -10,404 +10,545 @@ and for generating any future documentation artefact.
 
 | Item | Value |
 |---|---|
-| Product name | BKM.Integration |
-| Solution file | `bkm-integration/BKM.Integration.sln` |
+| Product name | BKM.Utility |
+| Solution file | `bkm-integration/BKM.Utility.sln` |
 | Runtime | .NET 8 / ASP.NET Core 8 |
 | Language | C# 12 |
-| Architecture | Clean Architecture (Onion) + Feature Slices |
+| Architecture | Independent vertical-slice NuGet packages, each with internal Clean Architecture |
 | Database | SQL Server (EF Core 8, Code First) |
-| Cache | SQL Server Distributed Cache (`IDistributedCache`) |
+| Cache | SQL Server Distributed Cache (`IDistributedCache`) — `dbo.BkmCache` |
 | Base URL (dev) | http://localhost:5000 |
 | Swagger UI (dev) | http://localhost:5000/swagger |
+| DB name (default) | `BkmUtilityDb` |
 
 ---
 
-## Project Structure
+## Architecture: Independent Vertical-Slice Packages
+
+### What this means
+
+Each NuGet package is **fully self-contained**. It owns its own:
+- Domain entities and interfaces (`Domain/`)
+- Application use-case services and DTOs (`Application/`)
+- Infrastructure (EF Core DbContext, repositories, external libs) (`Infrastructure/`)
+- EF Core migrations (`Infrastructure/Persistence/Migrations/`)
+- DI entry point (`*Extensions.cs` with `AddBkm*()`)
+
+No shared `Domain`, `Application`, or `Infrastructure` project exists.
+The three-layer discipline is enforced *inside* each package as a folder structure,
+not as separate projects.
+
+### Internal layer discipline (per package)
+
+```
+Domain/         ← pure C# entities + interfaces; zero NuGet deps
+    ↑ referenced by
+Application/    ← use-case services + DTOs; references Domain only; no EF, no SQL
+    ↑ referenced by
+Infrastructure/ ← EF Core, SQL, SMTP, Serilog, AES etc.; references Domain + Application
+```
+
+### Solution layout
 
 ```
 bkm-integration/
-├── BKM.Integration.sln
+├── BKM.Utility.sln
 └── src/
-    ├── BKM.Integration.Domain/          layer: entities + interfaces, zero deps
-    ├── BKM.Integration.Application/     layer: use cases, DTOs, services
-    ├── BKM.Integration.Infrastructure/  layer: EF Core, SQL, cache, crypto
-    └── BKM.Integration.Api/             layer: controllers, middleware, filters
+    ├── Directory.Build.props          ← single version source of truth
+    ├── BKM.Utility.Abstractions/      ← shared cross-cutting types (no feature logic)
+    ├── BKM.Utility.Encryption/        ← independent NuGet package
+    ├── BKM.Utility.Cache/             ← independent NuGet package
+    ├── BKM.Utility.Auth/              ← independent NuGet package
+    ├── BKM.Utility.Email/             ← independent NuGet package
+    ├── BKM.Utility.Feed/              ← independent NuGet package
+    ├── BKM.Utility.UrlShortener/      ← independent NuGet package
+    ├── BKM.Utility.FileIngestion/     ← independent NuGet package
+    ├── BKM.Utility.AppLog/            ← independent NuGet package
+    ├── BKM.Utility/                   ← meta-package (references all 9 above)
+    └── BKM.Utility.Api/               ← ASP.NET Core host; NOT packaged
 ```
 
-### Dependency direction
-```
-Api → Application → Domain ← Infrastructure
-```
-Domain has zero NuGet dependencies. Application references Domain only.
-Infrastructure references Domain + Application. Api references Application + Infrastructure.
+### Package dependency graph
 
-### Feature slice pattern (inside each layer)
 ```
-<Layer>/
-└── Features/
-    └── <FeatureName>/       ← one folder per feature at the same depth
-        ├── Entities/        (Domain only)
-        ├── Interfaces/
-        ├── DTOs/            (Application only)
-        ├── Services/        (Application only)
-        ├── Persistence/     (Infrastructure only)
-        ├── Caching/         (Infrastructure only)
-        └── Crypto/          (Infrastructure only)
+BKM.Utility.Abstractions     ← zero package deps (only Microsoft.Extensions.DI.Abstractions)
+BKM.Utility.Encryption       ← Abstractions
+BKM.Utility.Cache            ← Abstractions
+BKM.Utility.Auth             ← Abstractions
+BKM.Utility.FileIngestion    ← Abstractions
+BKM.Utility.Email            ← Abstractions + Encryption + Cache
+BKM.Utility.Feed             ← Abstractions + Cache
+BKM.Utility.UrlShortener     ← Abstractions + Cache
+BKM.Utility.AppLog           ← Abstractions + Cache
+BKM.Utility (meta)           ← all 9 above
 ```
 
-### 3 shared files touched when adding any new feature
-1. `Infrastructure/Persistence/AppDbContext.cs` — add DbSet + entity config region
-2. `Application/DependencyInjection.cs` — add one scoped registration line
-3. `Infrastructure/DependencyInjection.cs` — add one registration block
+### Why Email depends on Encryption
+`EmailService` decrypts the stored SMTP password using `IEncryptionService` at send time.
+This is a hard dependency — `AddBkmEmail()` always auto-registers Encryption + Cache.
+
+### Why Feed depends on Cache
+`PostService.CreateAsync()` triggers push fan-out via `IPushFeedService`, which uses
+`ICacheService<T>` for the pre-computed feed. This is a hard dependency.
 
 ---
 
-## Features
+## BKM.Utility.Abstractions
 
-### 1. UrlShortener
-**Purpose:** Shorten any URL to an 8-char Base62 code. Redirect via short code.
+Shared cross-cutting types consumed by every feature package.
+**Zero feature logic lives here.** Only plumbing interfaces and response models.
 
-| Item | Detail |
+### Files
+
+| File | Purpose |
 |---|---|
-| Endpoints | `POST /shorten`, `GET /{code}` |
-| Code generation | Base62 encoding of SQL Server IDENTITY Id — zero collisions |
-| Deduplication | Same URL always returns the same code (DB index on OriginalUrl) |
-| Cache | SQL Server `IDistributedCache` — TTL 24h, cache-first on resolve |
-| DB tables | `dbo.ShortenedUrls`, `dbo.UrlCache` |
+| `Shared/Interfaces/ICacheService.cs` | Generic cache abstraction (`Get`, `Set`, `Remove`) |
+| `Features/ApiResponse/Models/ApiResponse.cs` | `ApiResponse<T>` envelope returned by all endpoints |
+| `Features/ApiResponse/Models/ErrorCodes.cs` | Enum of all error codes across all features |
+| `Features/ApiResponse/Builders/ApiResponseBuilder.cs` | Fluent builder for `ApiResponse<T>` |
 
-**Key files:**
-- Domain entity: `Domain/Features/UrlShortener/Entities/ShortenedUrl.cs`
-- Domain entity: `Domain/Features/UrlShortener/Entities/UrlCacheEntry.cs`
-- Interfaces: `Domain/Features/UrlShortener/Interfaces/IUrlRepository.cs`, `IUrlCacheService.cs`
-- Service: `Application/Features/UrlShortener/Services/UrlShortenerService.cs`
-- Encoder: `Application/Features/UrlShortener/Services/Base62Encoder.cs`
-- Repository: `Infrastructure/Features/UrlShortener/Persistence/UrlRepository.cs`
-- Cache impl: `Infrastructure/Features/UrlShortener/Caching/SqlServerCacheService.cs`
-- Controller: `Api/Features/UrlShortener/UrlShortenerController.cs`
+### Consumer usage
 
-**Sample request/response:**
-```json
-POST /shorten  →  { "url": "https://example.com/long" }
-200 OK         →  { "success": true, "data": { "shortUrl": "http://localhost:5000/1Z3bKx", "code": "1Z3bKx" }, ... }
-```
-
----
-
-### 2. Encryption
-**Purpose:** Encrypt / decrypt any UTF-8 text (strings, JSON, Unicode, emojis) using AES-256-GCM.
-
-| Item | Detail |
-|---|---|
-| Endpoints | `POST /api/encryption/encrypt`, `POST /api/encryption/decrypt` |
-| Algorithm | AES-256-GCM (authenticated encryption — confidentiality + integrity + tamper detection) |
-| Key | 32-byte key, Base64-encoded, stored in `appsettings.json → Encryption:Key` |
-| Nonce | 96-bit cryptographic random per call — safe until ~4 billion encryptions per key |
-| Output | Base64-encoded package: `[12-byte nonce] + [cipher text] + [16-byte GCM tag]` |
-| No DB | Pure stateless service — no EF/DB changes needed |
-| DI lifetime | Singleton (stateless after construction) |
-| Tamper behaviour | Any byte flip → `CryptographicException` → middleware → 400 Bad Request |
-| Key config (dev) | `appsettings.json` Encryption:Key |
-| Key config (prod) | Environment variable or Azure Key Vault |
-
-**Key files:**
-- Domain interface: `Domain/Features/Encryption/Interfaces/IEncryptionService.cs`
-- App interface: `Application/Features/Encryption/Interfaces/IEncryptionAppService.cs`
-- App service: `Application/Features/Encryption/Services/EncryptionAppService.cs`
-- DTOs: `Application/Features/Encryption/DTOs/` (Encrypt/DecryptRequest, Encrypt/DecryptResponse)
-- Implementation: `Infrastructure/Features/Encryption/Crypto/AesGcmEncryptionService.cs`
-- Controller: `Api/Features/Encryption/EncryptionController.cs`
-
-**Sample request/response:**
-```json
-POST /api/encryption/encrypt  →  { "plainText": "Hello 你好 🔐" }
-200 OK  →  { "success": true, "data": { "cipherPackage": "base64...", "algorithm": "AES-256-GCM" }, ... }
-
-POST /api/encryption/decrypt  →  { "cipherPackage": "base64..." }
-200 OK  →  { "success": true, "data": { "plainText": "Hello 你好 🔐" }, ... }
-```
-
----
-
-### 3. ApiResponse (Cross-cutting)
-**Purpose:** Universal response envelope + global exception handling for all endpoints.
-
-| Item | Detail |
-|---|---|
-| Envelope fields | `success`, `message`, `data`, `meta`, `warnings`, `errors`, `debug` |
-| Global exception | `GlobalExceptionHandlerMiddleware` — first in pipeline, catches everything |
-| Validation | `ValidationFilter` — global MVC filter, auto-rejects invalid ModelState |
-| Debug block | Populated only outside Production (traceId, exceptionType, stackTrace, timestamp) |
-| Try/catch in controllers | **Zero** — never needed, middleware handles all exceptions |
-| Error codes | Centralised in `Application/Features/ApiResponse/Models/ErrorCodes.cs` |
-
-**Exception → HTTP status mapping:**
-| Exception type | HTTP status | Error code |
-|---|---|---|
-| ArgumentException / ArgumentNullException | 400 | BAD_REQUEST |
-| CryptographicException | 400 | DECRYPTION_FAILED |
-| UnauthorizedAccessException | 401 | UNAUTHORIZED |
-| KeyNotFoundException / FileNotFoundException | 404 | NOT_FOUND |
-| InvalidOperationException | 409 | CONFLICT |
-| NotImplementedException | 501 | INTERNAL_ERROR |
-| OperationCanceledException | 499 | TIMEOUT |
-| TimeoutException | 504 | TIMEOUT |
-| Everything else | 500 | INTERNAL_ERROR |
-
-**Key files:**
-- Model: `Application/Features/ApiResponse/Models/ApiResponse.cs`
-- Error codes: `Application/Features/ApiResponse/Models/ErrorCodes.cs`
-- Builder: `Application/Features/ApiResponse/Builders/ApiResponseBuilder.cs`
-- Middleware: `Api/Features/ApiResponse/Middleware/GlobalExceptionHandlerMiddleware.cs`
-- Filter: `Api/Features/ApiResponse/Filters/ValidationFilter.cs`
-
-**Builder usage pattern:**
 ```csharp
-// Success with data
-return Ok(ApiResponseBuilder.Ok(data, "Created successfully."));
+// Success
+return Ok(ApiResponseBuilder.Ok(data));
 
-// Success with meta
-return Ok(ApiResponseBuilder<T>.Success(data)
-    .WithMeta("totalCount", 1000).WithMeta("page", 1).Build());
-
-// Failure
-return NotFound(ApiResponseBuilder.Error(ErrorCodes.NotFound, "Item not found."));
-
-// Warning
-return Ok(ApiResponseBuilder<T>.Success(data)
-    .WithWarning("Field 'legacyId' is deprecated.").Build());
+// Error
+return NotFound(ApiResponseBuilder.Error(ErrorCodes.NotFound, "Not found."));
 ```
 
 ---
 
-## Configuration Reference (`appsettings.json`)
+## Feature: Encryption
+
+**Purpose:** AES-256-GCM stateless encrypt/decrypt. Zero database dependency.
+
+| Item | Detail |
+|---|---|
+| Package | `BKM.Utility.Encryption` |
+| DI method | `AddBkmEncryption(config)` |
+| Config key | `"Encryption:Key"` — 32-byte Base64 string |
+| DB tables | None |
+
+### Key files
+
+```
+BKM.Utility.Encryption/
+├── Domain/Interfaces/IEncryptionService.cs
+├── Application/Interfaces/IEncryptionAppService.cs
+├── Application/Services/EncryptionAppService.cs
+├── Application/DTOs/EncryptRequest.cs, EncryptResponse.cs, DecryptRequest.cs, DecryptResponse.cs
+├── Infrastructure/Crypto/AesGcmEncryptionService.cs
+└── EncryptionExtensions.cs
+```
+
+### Endpoints
+
+| Method | Path | Auth |
+|---|---|---|
+| `POST` | `/api/encryption/encrypt` | Bearer |
+| `POST` | `/api/encryption/decrypt` | Bearer |
+
+---
+
+## Feature: Cache
+
+**Purpose:** SQL Server distributed cache backing `ICacheService<T>`. Shared by Email, Feed, UrlShortener, AppLog.
+
+| Item | Detail |
+|---|---|
+| Package | `BKM.Utility.Cache` |
+| DI method | `AddBkmCache(config)` |
+| Connection string key | `"Cache"` (falls back to `"DefaultConnection"`) |
+| DB table | `dbo.BkmCache` |
+
+### Key files
+
+```
+BKM.Utility.Cache/
+├── Domain/Entities/UrlCacheEntry.cs
+├── Infrastructure/Caching/DistributedCacheService.cs
+├── Infrastructure/Persistence/CacheDbContext.cs
+├── Infrastructure/Persistence/Migrations/
+└── CacheExtensions.cs
+```
+
+---
+
+## Feature: Auth
+
+**Purpose:** JWT Bearer authentication, refresh tokens, SSO (Google + Microsoft), ASP.NET Identity, RBAC, ABAC.
+
+| Item | Detail |
+|---|---|
+| Package | `BKM.Utility.Auth` |
+| DI method | `AddBkmAuth(config)` |
+| Connection string key | `"Auth"` (falls back to `"DefaultConnection"`) |
+| DB tables | `AspNetUsers`, `AspNetRoles`, `AspNetUserRoles`, `RefreshTokens`, `Permissions`, `RolePermissions` |
+
+### Key files
+
+```
+BKM.Utility.Auth/
+├── Domain/Entities/AppUser.cs, AppRole.cs, Permission.cs, RefreshToken.cs, RolePermission.cs
+├── Domain/Interfaces/ITokenService.cs, IRefreshTokenRepository.cs, IPermissionRepository.cs
+├── Application/Services/AuthService.cs, UserManagementService.cs, RoleManagementService.cs, PermissionService.cs
+├── Infrastructure/Identity/TokenService.cs
+├── Infrastructure/Persistence/AuthDbContext.cs
+├── Infrastructure/Persistence/PermissionRepository.cs, RefreshTokenRepository.cs
+├── Infrastructure/Persistence/Migrations/
+└── AuthExtensions.cs
+```
+
+### JWT config
 
 ```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Server=...;Database=BkmIntegrationDb;..."
+"Jwt": {
+  "SecretKey": "<min 32 chars>",
+  "Issuer": "BKM.Utility",
+  "Audience": "BKM.Utility.Clients",
+  "AccessTokenMinutes": 60,
+  "RefreshTokenDays": 30
+}
+```
+
+### SSO config
+
+```json
+"Sso": {
+  "Google":    { "ClientId": "", "ClientSecret": "" },
+  "Microsoft": { "TenantId": "common", "ClientId": "", "ClientSecret": "" }
+}
+```
+
+---
+
+## Feature: Email
+
+**Purpose:** SMTP email sender with DB-stored configs and templates, send audit log, AES-encrypted SMTP password.
+
+| Item | Detail |
+|---|---|
+| Package | `BKM.Utility.Email` |
+| DI method | `AddBkmEmail(config)` — auto-includes Encryption + Cache |
+| Connection string key | `"Email"` (falls back to `"DefaultConnection"`) |
+| DB tables | `EmailConfigs`, `EmailTemplates`, `EmailAuditLogs` |
+| Hard dependency | `IEncryptionService` — SMTP password is stored encrypted |
+
+### Key files
+
+```
+BKM.Utility.Email/
+├── Domain/Entities/EmailConfig.cs, EmailTemplate.cs, EmailAuditLog.cs, SmtpTlsMode.cs
+├── Application/Services/EmailService.cs
+├── Infrastructure/Smtp/SmtpSender.cs
+├── Infrastructure/Persistence/EmailDbContext.cs, Repos, Migrations
+└── EmailExtensions.cs
+```
+
+---
+
+## Feature: Feed
+
+**Purpose:** Social feed with Push (pre-computed fan-out) and Pull (on-demand fan-in) strategies, Follow graph.
+
+| Item | Detail |
+|---|---|
+| Package | `BKM.Utility.Feed` |
+| DI method | `AddBkmFeed(config)` — auto-includes Cache |
+| Connection string key | `"Feed"` (falls back to `"DefaultConnection"`) |
+| DB tables | `Posts`, `Follows`, `UserFeedEntries` |
+| Push feed cache TTL | 60 seconds |
+| Pull feed cache TTL | 30 seconds |
+
+### Key files
+
+```
+BKM.Utility.Feed/
+├── Domain/Entities/Post.cs, Follow.cs, UserFeedEntry.cs
+├── Application/Services/PostService.cs, PushFeedService.cs, PullFeedService.cs, FollowService.cs
+├── Infrastructure/Persistence/FeedDbContext.cs, PostRepository.cs, FollowRepository.cs, UserFeedRepository.cs
+├── Infrastructure/Persistence/Migrations/
+└── FeedExtensions.cs
+```
+
+---
+
+## Feature: UrlShortener
+
+**Purpose:** Shorten URLs to 8-char Base62 codes. Redirect via short code. Cache-first resolution.
+
+| Item | Detail |
+|---|---|
+| Package | `BKM.Utility.UrlShortener` |
+| DI method | `AddBkmUrlShortener(config)` — auto-includes Cache |
+| Connection string key | `"UrlShortener"` (falls back to `"DefaultConnection"`) |
+| DB tables | `ShortenedUrls` |
+| Cache TTL | 24 hours |
+| Code generation | Base62 encoding of SQL IDENTITY Id — zero collisions |
+
+### Key files
+
+```
+BKM.Utility.UrlShortener/
+├── Domain/Entities/ShortenedUrl.cs, UrlCacheEntry.cs
+├── Application/Services/UrlShortenerService.cs, Base62Encoder.cs
+├── Infrastructure/Persistence/UrlShortenerDbContext.cs, UrlRepository.cs
+├── Infrastructure/Persistence/Migrations/
+└── UrlShortenerExtensions.cs
+```
+
+---
+
+## Feature: FileIngestion
+
+**Purpose:** Ingest CSV, TSV, JSON, JSON Lines, XML, and Excel files. SHA-256 deduplication per file.
+
+| Item | Detail |
+|---|---|
+| Package | `BKM.Utility.FileIngestion` |
+| DI method | `AddBkmFileIngestion(config)` |
+| Connection string key | `"FileIngestion"` (falls back to `"DefaultConnection"`) |
+| DB tables | `IngestionBatches`, `IngestedRecords` |
+| Supported formats | CSV, TSV, JSON, JSON Lines, XML, `.xls`, `.xlsx` |
+| Deduplication | SHA-256 hash of file content; duplicate files rejected |
+
+### Key files
+
+```
+BKM.Utility.FileIngestion/
+├── Domain/Entities/IngestionBatch.cs, IngestedRecord.cs, ParseOptions.cs
+├── Application/Services/FileIngestionService.cs
+├── Application/Interfaces/IFileParser.cs, IFileParserFactory.cs
+├── Infrastructure/Parsing/DelimitedFileParser.cs, JsonFileParser.cs, XmlFileParser.cs, ExcelFileParser.cs, FileParserFactory.cs
+├── Infrastructure/Persistence/FileIngestionDbContext.cs, IngestionRepository.cs
+├── Infrastructure/Persistence/Migrations/
+└── FileIngestionExtensions.cs
+```
+
+---
+
+## Feature: AppLog
+
+**Purpose:** Structured application logging via Serilog. DB + rolling-file sinks. Queryable log API. Per-feature retention policies with scheduled purge.
+
+| Item | Detail |
+|---|---|
+| Package | `BKM.Utility.AppLog` |
+| DI method | `AddBkmAppLog(config)` — auto-includes Cache |
+| Connection string key | `"AppLog"` (falls back to `"DefaultConnection"`) |
+| DB tables | `AppLogs`, `LogRetentionPolicies` |
+| Serilog sinks | Database (`DatabaseLogSink`) + rolling file |
+| Purge | `LogPurgeBackgroundService` — runs on a configurable interval |
+
+### Logging config
+
+```json
+"Logging": {
+  "MinimumLevel": "Information",
+  "Sinks": { "Database": true, "File": true },
+  "File": {
+    "Path": "logs/bkm-.txt",
+    "FileSizeLimitBytes": 10485760,
+    "RetainedFileCountLimit": 30
   },
-  "BaseUrl": "http://localhost:5000",
-  "Encryption": {
-    "Key": "<32-byte Base64 key — use env var or Key Vault in production>"
-  },
-  "Logging": {
-    "MinimumLevel": "Information",
-    "Sinks": { "Database": true, "File": true },
-    "File": {
-      "Path": "logs/bkm-.txt",
-      "FileSizeLimitBytes": 10485760,
-      "RetainedFileCountLimit": 30
-    },
-    "Purge": {
-      "InitialDelayMinutes": 5,
-      "RunIntervalHours": 24
-    }
+  "Purge": {
+    "InitialDelayMinutes": 5,
+    "RunIntervalHours": 24
   }
 }
 ```
 
-**Generate a new key:**
-```powershell
-$rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-$b = New-Object byte[] 32; $rng.GetBytes($b); [Convert]::ToBase64String($b)
+### Key files
+
 ```
+BKM.Utility.AppLog/
+├── Domain/Entities/AppLogEntry.cs, LogRetentionPolicy.cs
+├── Application/Services/AppLogService.cs, RetentionPolicyService.cs
+├── Infrastructure/Logging/AppLogRepository.cs, DatabaseLogSink.cs, SerilogConfigurator.cs
+├── Infrastructure/Purging/LogPurgeBackgroundService.cs, RetentionPolicyRepository.cs
+├── Infrastructure/Persistence/AppLogDbContext.cs
+├── Infrastructure/Persistence/Migrations/
+└── AppLogExtensions.cs
+```
+
+---
+
+## DbContext Map
+
+Each feature has its **own** `DbContext`, its **own** migration history, and its **own** connection string key.
+They all fall back to `"DefaultConnection"` if the named key is absent.
+
+| DbContext | Package | Connection string key | Tables |
+|---|---|---|---|
+| `CacheDbContext` | BKM.Utility.Cache | `"Cache"` | `BkmCache` |
+| `AuthDbContext` | BKM.Utility.Auth | `"Auth"` | `AspNetUsers`, `AspNetRoles`, `RefreshTokens`, `Permissions`, `RolePermissions` |
+| `EmailDbContext` | BKM.Utility.Email | `"Email"` | `EmailConfigs`, `EmailTemplates`, `EmailAuditLogs` |
+| `FeedDbContext` | BKM.Utility.Feed | `"Feed"` | `Posts`, `Follows`, `UserFeedEntries` |
+| `UrlShortenerDbContext` | BKM.Utility.UrlShortener | `"UrlShortener"` | `ShortenedUrls` |
+| `FileIngestionDbContext` | BKM.Utility.FileIngestion | `"FileIngestion"` | `IngestionBatches`, `IngestedRecords` |
+| `AppLogDbContext` | BKM.Utility.AppLog | `"AppLog"` | `AppLogs`, `LogRetentionPolicies` |
+
+---
+
+## BKM.Utility Meta-Package
+
+`BKM.Utility.csproj` references all 9 feature packages and Abstractions.
+`BkmUtilityExtensions.cs` exposes:
+- `AddBkmUtility(config)` — registers all features at once
+- Individual `AddBkm*(config)` methods — register one feature at a time (delegates to each feature's own extensions)
 
 ---
 
 ## Rules for Adding a New Feature
 
-1. Create `Features/<NewFeature>/` folder inside each of the 4 projects
-2. Domain: entities + interfaces only — no NuGet, no EF, no HTTP
-3. Application: DTOs + interface + service — no EF, no SQL
-4. Infrastructure: concrete implementations (Persistence/, Caching/, Crypto/ as needed)
-5. Api: one controller, zero try/catch, use `ApiResponseBuilder`
-6. Add error codes to `ErrorCodes.cs`
-7. Register in `Application/DependencyInjection.cs` and `Infrastructure/DependencyInjection.cs`
-8. If DB table needed: add DbSet + entity config region to `AppDbContext.cs`, then `dotnet-ef migrations add <FeatureName>`
-9. Run `dotnet build BKM.Integration.sln` — must be 0 warnings, 0 errors
+1. Create a new project `src/BKM.Utility.<FeatureName>/` — `<IsPackable>true</IsPackable>`
+2. Add internal folder structure: `Domain/Entities/`, `Domain/Interfaces/`, `Application/DTOs/`, `Application/Interfaces/`, `Application/Services/`, `Infrastructure/Persistence/`
+3. **Domain** — entities + interfaces only; zero NuGet deps, zero EF
+4. **Application** — DTOs + interface + service; references Domain only; no EF, no SQL
+5. **Infrastructure** — DbContext, repositories, external libs; references Domain + Application
+6. Create `<Feature>Extensions.cs` with a single `AddBkm<Feature>(IServiceCollection, IConfiguration)` that inlines all DI registrations
+7. Add a controller to `BKM.Utility.Api/Features/<Feature>/`; zero `try/catch`; use `ApiResponseBuilder`
+8. Add error codes to `BKM.Utility.Abstractions/.../ErrorCodes.cs`
+9. Add `ProjectReference` to both `BKM.Utility.Api.csproj` and `BKM.Utility.csproj`
+10. Add a delegate call to `BkmUtilityExtensions.cs` in `AddBkmUtility()`
+11. Add a project entry to `BKM.Utility.sln`
+12. Run `dotnet build BKM.Utility.sln` — must be **0 warnings, 0 errors**
 
 ---
 
 ## EF Core Migration Commands
 
+Each feature's migrations live inside that feature's own project.
+
 ```bash
 cd bkm-integration
 
-# Add migration after schema change
-$env:PATH += ";$env:USERPROFILE\.dotnet\tools"
-dotnet-ef migrations add <MigrationName> \
-  --project src/BKM.Integration.Infrastructure/BKM.Integration.Infrastructure.csproj \
-  --startup-project src/BKM.Integration.Api/BKM.Integration.Api.csproj \
-  --output-dir Persistence/Migrations
+# Auth
+dotnet ef migrations add <Name> \
+  --project src/BKM.Utility.Auth/BKM.Utility.Auth.csproj \
+  --startup-project src/BKM.Utility.Api/BKM.Utility.Api.csproj \
+  --context AuthDbContext \
+  --output-dir Infrastructure/Persistence/Migrations
 
-# Migrations apply automatically on startup via dbCtx.Database.Migrate()
+# Cache
+dotnet ef migrations add <Name> \
+  --project src/BKM.Utility.Cache/BKM.Utility.Cache.csproj \
+  --startup-project src/BKM.Utility.Api/BKM.Utility.Api.csproj \
+  --context CacheDbContext \
+  --output-dir Infrastructure/Persistence/Migrations
+
+# Email
+dotnet ef migrations add <Name> \
+  --project src/BKM.Utility.Email/BKM.Utility.Email.csproj \
+  --startup-project src/BKM.Utility.Api/BKM.Utility.Api.csproj \
+  --context EmailDbContext \
+  --output-dir Infrastructure/Persistence/Migrations
+
+# Feed
+dotnet ef migrations add <Name> \
+  --project src/BKM.Utility.Feed/BKM.Utility.Feed.csproj \
+  --startup-project src/BKM.Utility.Api/BKM.Utility.Api.csproj \
+  --context FeedDbContext \
+  --output-dir Infrastructure/Persistence/Migrations
+
+# AppLog
+dotnet ef migrations add <Name> \
+  --project src/BKM.Utility.AppLog/BKM.Utility.AppLog.csproj \
+  --startup-project src/BKM.Utility.Api/BKM.Utility.Api.csproj \
+  --context AppLogDbContext \
+  --output-dir Infrastructure/Persistence/Migrations
+
+# UrlShortener
+dotnet ef migrations add <Name> \
+  --project src/BKM.Utility.UrlShortener/BKM.Utility.UrlShortener.csproj \
+  --startup-project src/BKM.Utility.Api/BKM.Utility.Api.csproj \
+  --context UrlShortenerDbContext \
+  --output-dir Infrastructure/Persistence/Migrations
+
+# FileIngestion
+dotnet ef migrations add <Name> \
+  --project src/BKM.Utility.FileIngestion/BKM.Utility.FileIngestion.csproj \
+  --startup-project src/BKM.Utility.Api/BKM.Utility.Api.csproj \
+  --context FileIngestionDbContext \
+  --output-dir Infrastructure/Persistence/Migrations
 ```
 
----
-
-## Session History Summary
-
-| Session | What was built |
-|---|---|
-| 1 | Go-based in-memory URL shortener (urlshortener/) |
-| 2 | .NET 8 + SQL Server + IDistributedCache URL shortener (urlshortener-dotnet/) |
-| 3 | Refactored to Clean Architecture (4 projects) |
-| 4 | Feature-slice folders inside each layer |
-| 5 | Renamed to BKM.Integration (bkm-integration/) |
-| 6 | Added Encryption feature (AES-256-GCM) |
-| 7 | Added ApiResponse feature (universal envelope + global exception middleware) |
-| 8 | Added AppLog feature (Serilog dual-sink: DB + rolling text file, configurable, Code First) |
-| 9 | Added Log Purging — per-feature retention policies (`dbo.LogRetentionPolicies`), scheduled background purge of DB rows + log files |
-| 10 | Promoted distributed cache to platform-wide generic `ICacheService<T>` — UrlShortener (24h TTL) + AppLog queries (30s TTL) |
-| 11 | Added Email Notification — pure BCL SMTP sender (SslStream/TcpClient, Veracode CWE-297/319 clean), DB-stored config + templates + audit log, AES-256-GCM password encryption |
-| 12 | Added PushFeed + PullFeed — two independent social feed services sharing Posts/Follows social graph |
-| 13 | Added Auth + SSO + RBAC + ABAC — JWT Bearer, OpenIdConnect (Google/Microsoft), ASP.NET Identity, role/permission DB-backed, Swagger JWT UI |
-| 14 | Added FileIngestion — generic streaming ingest (CSV/TSV/pipe/fixed-width/JSON/JSON Lines/XML/Excel), one master table, SHA-256 dedup, JSON payload column with indexes |
+Migrations are applied automatically on startup in `Program.cs` via `dbContext.Database.Migrate()`.
 
 ---
 
-## Features: Feed System (PushFeed + PullFeed)
+## NuGet Packages
 
-### Shared domain (`Domain/Features/Feed/`)
+### Packable projects
 
-| Entity | Table | Purpose |
+| Package ID | Project | Description |
 |---|---|---|
-| `Post` | `dbo.Posts` | Content unit — UserId, Body, MediaUrl, CreatedAt |
-| `Follow` | `dbo.Follows` | Social graph — FollowerId → FolloweeId, unique index |
-| `UserFeedEntry` | `dbo.UserFeeds` | Pre-computed push-feed rows per follower |
+| `BKM.Utility.Abstractions` | `BKM.Utility.Abstractions` | Shared interfaces + response models |
+| `BKM.Utility.Encryption` | `BKM.Utility.Encryption` | AES-256-GCM, zero DB deps |
+| `BKM.Utility.Cache` | `BKM.Utility.Cache` | SQL distributed cache |
+| `BKM.Utility.Auth` | `BKM.Utility.Auth` | JWT, Identity, SSO, RBAC, ABAC |
+| `BKM.Utility.Email` | `BKM.Utility.Email` | SMTP + templates + audit |
+| `BKM.Utility.Feed` | `BKM.Utility.Feed` | Social feed push + pull |
+| `BKM.Utility.UrlShortener` | `BKM.Utility.UrlShortener` | Base62 URL shortener |
+| `BKM.Utility.FileIngestion` | `BKM.Utility.FileIngestion` | CSV/JSON/XML/Excel ingestion |
+| `BKM.Utility.AppLog` | `BKM.Utility.AppLog` | Serilog + retention + purge |
+| `BKM.Utility` | `BKM.Utility` | Meta-package (all features) |
 
-### Feature: PushFeed — Pre-computed (fan-out on write)
+### Building packages manually
 
-**How it works:**
-1. User posts → `POST /api/posts?authorId=X`
-2. `PostService` saves the post → calls `PushFeedService.FanOutAsync(post)`
-3. `FanOutAsync` loads all followers, writes one `UserFeedEntry` per follower into `dbo.UserFeeds`
-4. Trims each follower's feed to 500 entries (oldest removed)
-5. Evicts cache pages 1–5 for all affected followers
-
-**Read:** `GET /api/feed/push?userId=X` reads directly from `dbo.UserFeeds` — **O(1)**, no aggregation
-**Cache:** `push:feed:{userId}:p{page}` — TTL 60 s
-
-**Tradeoff:** Write amplification proportional to follower count. Best for accounts with < 10k followers.
-
-### Feature: PullFeed — On-demand (fan-in on read)
-
-**How it works:**
-1. User requests feed → `GET /api/feed/pull?userId=X`
-2. `PullFeedService` loads followee IDs → queries `dbo.Posts` for each followee (up to 1000 per followee)
-3. Merges, sorts by `PostedAt DESC`, paginates in memory
-4. Caches result 30 s
-
-**Read:** Computed fresh per request (or from 30 s cache). No `dbo.UserFeeds` involved.
-**Cache:** `pull:feed:{userId}:p{page}` — TTL 30 s
-
-**Tradeoff:** Read latency grows with followee count. Best for high-follower accounts or lazy-read clients.
-
-### API Endpoints
-
-| Method | Path | Service |
-|---|---|---|
-| `POST` | `/api/posts?authorId=X` | Creates post + triggers push fan-out |
-| `GET` | `/api/feed/push?userId=X&page=1&pageSize=20` | PushFeed read (pre-computed) |
-| `GET` | `/api/feed/pull?userId=X&page=1&pageSize=20` | PullFeed read (on-demand) |
-| `POST` | `/api/follow?followerId=X` + body `{ "followeeId": "Y" }` | Follow a user |
-| `DELETE` | `/api/follow/{followeeId}?followerId=X` | Unfollow |
-| `GET` | `/api/follow/followees?userId=X` | List followees |
-
-### Key files
-
-| File | Purpose |
-|---|---|
-| `Application/Features/Feed/Services/PushFeedService.cs` | Fan-out + cached read |
-| `Application/Features/Feed/Services/PullFeedService.cs` | Fan-in on demand + 30 s cache |
-| `Application/Features/Feed/Services/PostService.cs` | Create post + trigger fan-out |
-| `Infrastructure/Features/Feed/Persistence/UserFeedRepository.cs` | `dbo.UserFeeds` CRUD + purge |
-| `Api/Features/Feed/FeedController.cs` | `/api/feed/push` + `/api/feed/pull` |
-
----
-
-## Cross-cutting: Distributed Cache (`ICacheService<T>`)
-
-**Location:** `Domain/Shared/Interfaces/ICacheService.cs` (contract) + `Infrastructure/Shared/Caching/DistributedCacheService.cs` (impl)
-
-**Store:** SQL Server `dbo.UrlCache` via `Microsoft.Extensions.Caching.SqlServer` (`IDistributedCache`)
-
-**DI registration:** Open-generic — one line covers every `T`:
-```csharp
-services.AddTransient(typeof(ICacheService<>), typeof(DistributedCacheService<>));
+```bash
+cd bkm-integration
+dotnet build BKM.Utility.sln
+dotnet pack src/BKM.Utility/BKM.Utility.csproj --no-build -o nupkg
+# or pack all:
+dotnet pack BKM.Utility.sln --no-build -o nupkg
 ```
 
-**Usage per feature:**
-
-| Feature | Inject | Key pattern | TTL |
-|---|---|---|---|
-| UrlShortener | `ICacheService<string>` | `url:{code}` | 24 hours |
-| AppLog queries | `ICacheService<AppLogPageResult>` | `log:query:{hash16}` | 30 seconds |
-
-**Adding cache to a new feature:**
-1. Inject `ICacheService<YourDto>` in the Application service constructor
-2. Call `await cache.GetAsync(key, ct)` → if not null, return early
-3. Call `await cache.SetAsync(key, value, ttl, ct)` after loading from DB
-4. No DI change needed — open-generic covers it automatically
-
-**Fault tolerance:**
-- `GetAsync` returns `null` on any cache error — callers always fall through to DB
-- `SetAsync` / `RemoveAsync` swallow exceptions — cache faults never break the request path
-- Logged at `Warning` level via `ILogger<DistributedCacheService<T>>`
-
 ---
 
-### 4. AppLog
-**Purpose:** Structured application logging to DB (`dbo.AppLogs`) and rolling text files via Serilog. Queryable via REST API with pagination and filters.
+## Versioning
 
-| Item | Detail |
-|---|---|
-| Endpoints | `GET /api/logs` — paginated query with filters |
-| Sinks | SQL Server (`dbo.AppLogs`) + rolling file (`logs/bkm-*.txt`) |
-| Buffer | `Channel<LogEvent>` — 100k capacity, batch 100 — never blocks request thread |
-| DB table | `dbo.AppLogs` (Id, Timestamp, Level, Message, Feature, Exception, Properties) |
-| Log levels | Verbose, Debug, Information, Warning, Error, Fatal |
+### Single source of truth
 
-**Key files:**
-- Entity: `Domain/Features/AppLog/Entities/AppLogEntry.cs`
-- Interface: `Domain/Features/AppLog/Interfaces/IAppLogRepository.cs`
-- Service: `Application/Features/AppLog/Services/AppLogService.cs`
-- Sink: `Infrastructure/Features/AppLog/Logging/DatabaseLogSink.cs`
-- Repository: `Infrastructure/Features/AppLog/Logging/AppLogRepository.cs`
-- Controller: `Api/Features/AppLog/AppLogController.cs`
+`src/Directory.Build.props`:
 
----
-
-### 5. Log Retention & Purging
-**Purpose:** Configure per-feature DB and file log retention periods. A background service purges expired rows and old log files on a configurable schedule.
-
-| Item | Detail |
-|---|---|
-| Endpoints | `GET /api/logs/retention`, `PUT /api/logs/retention` |
-| DB table | `dbo.LogRetentionPolicies` (Id, Feature, DbRetentionDays, FileRetentionDays, Description, LastUpdatedAt, LastPurgedAt, LastPurgeDeletedCount) |
-| Default policy | Row where `Feature IS NULL` — applies to any feature with no specific policy |
-| Feature policy | Row with `Feature = 'FeatureName'` — overrides default |
-| Skip forever | Set `DbRetentionDays = 0` or `FileRetentionDays = 0` — that sink is never purged |
-| Schedule | `Logging:Purge:InitialDelayMinutes` (default 5), `Logging:Purge:RunIntervalHours` (default 24) |
-| Background service | `LogPurgeBackgroundService` — `IHostedService`, uses `IServiceScopeFactory` for scoped deps |
-| File purge | Deletes `*.txt` in the log directory older than default policy `FileRetentionDays` |
-
-**Key files:**
-- Entity: `Domain/Features/AppLog/Entities/LogRetentionPolicy.cs`
-- Interface: `Domain/Features/AppLog/Interfaces/IRetentionPolicyRepository.cs`
-- App interface: `Application/Features/AppLog/Interfaces/IRetentionPolicyService.cs`
-- App service: `Application/Features/AppLog/Services/RetentionPolicyService.cs`
-- DTOs: `Application/Features/AppLog/DTOs/RetentionPolicyDto.cs`, `UpsertRetentionPolicyRequest.cs`
-- Repository: `Infrastructure/Features/AppLog/Purging/RetentionPolicyRepository.cs`
-- Background service: `Infrastructure/Features/AppLog/Purging/LogPurgeBackgroundService.cs`
-- Controller: `Api/Features/AppLog/LogRetentionController.cs`
-
-**Sample request/response:**
-```json
-GET /api/logs/retention
-→ { "success": true, "data": [ { "feature": null, "dbRetentionDays": 90, "fileRetentionDays": 30, ... } ] }
-
-PUT /api/logs/retention
-body: { "feature": "UrlShortener", "dbRetentionDays": 30, "fileRetentionDays": 14, "description": "Short-lived URL logs" }
-→ { "success": true, "data": { "id": 2, "feature": "UrlShortener", "dbRetentionDays": 30, ... } }
+```xml
+<VersionPrefix>1.0.0</VersionPrefix>
+<VersionSuffix></VersionSuffix>   <!-- empty = stable; "rc.1" = pre-release -->
 ```
+
+Never set `<Version>` inside individual `.csproj` files.
+
+### CI pipeline — `.github/workflows/ci.yml`
+
+Triggers on every push and PR. Builds + packs as `1.0.0-ci.<run_number>+<sha>`.
+
+### Release pipeline — `.github/workflows/release.yml`
+
+Manual `workflow_dispatch` with inputs:
+- `bump_type`: `patch` / `minor` / `major`
+- `prerelease`: empty (stable) or `rc.1`, `beta.2` etc.
+- `dry_run`: `true` to preview without pushing
+
+Steps: bump `VersionPrefix` in `Directory.Build.props` → commit → tag `v<version>` → build → pack → push to NuGet.
+
+### Required GitHub secrets
+
+| Secret | Purpose |
+|---|---|
+| `NUGET_API_KEY` | nuget.org or private feed API key |
+| `NUGET_FEED_URL` | *(optional)* private feed URL |
+
+---
+
+## Session History
+
+| Session | What was done |
+|---|---|
+| 1–10 | Initial build: Clean Architecture monolith with 3 shared layers (Domain/Application/Infrastructure) + 9 hollow NuGet wrapper projects |
+| 11–15 | Auth (JWT + SSO + RBAC/ABAC), Email, Feed (push+pull), FileIngestion, AppLog features added; per-feature DbContexts introduced |
+| 16 | `AppDbContext` replaced by 7 independent DbContexts with separate migration histories |
+| 17 | Full rename `BKM.Integration` → `BKM.Utility` across all files, folders, namespaces |
+| 18 | `BkmIntegrationExtensions.cs` renamed to `BkmUtilityExtensions.cs`; class renamed to `BkmUtilityExtensions`; `AddBkmIntegration` → `AddBkmUtility`; `appsettings.json` DB name updated to `BkmUtilityDb`; stale `BKM.Integration.*.nupkg` cleaned and repacked as `BKM.Utility.*.nupkg` |
+| 19 | **Full restructure to independent vertical-slice packages.** Deleted `BKM.Utility.Domain`, `BKM.Utility.Application`, `BKM.Utility.Infrastructure` projects. Each feature package now carries its own Domain/Application/Infrastructure folders internally. Added `BKM.Utility.Abstractions` for shared cross-cutting types. Build: **0 warnings, 0 errors**. |

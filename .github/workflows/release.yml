@@ -1,0 +1,201 @@
+﻿# ──────────────────────────────────────────────────────────────────────────────
+# RELEASE — triggered manually via workflow_dispatch.
+#
+# How to cut a release:
+#   1. Go to Actions → "Release" → "Run workflow".
+#   2. Choose the branch (usually main) and fill in the three inputs:
+#        bump_type : major | minor | patch   (which part of the version to increment)
+#        prerelease: leave empty for a stable release, or set to e.g. "rc.1"
+#        dry_run   : true to preview the new version without pushing anything
+#
+# What it does:
+#   1. Reads the current VersionPrefix from Directory.Build.props.
+#   2. Increments the requested component (major/minor/patch).
+#   3. Writes the new VersionPrefix back to Directory.Build.props.
+#   4. Commits and pushes the version bump on the release branch.
+#   5. Creates a git tag  v<new-version>  (e.g. v1.2.0 or v1.2.0-rc.1).
+#   6. Builds, packs, and pushes the .nupkg to nuget.org (or your private feed).
+#   7. Creates a GitHub Release with the .nupkg attached.
+#
+# Required secrets (set in repo Settings → Secrets → Actions):
+#   NUGET_API_KEY          — nuget.org API key  (or NUGET_PRIVATE_API_KEY for a private feed)
+#
+# Optional secrets:
+#   NUGET_FEED_URL         — defaults to https://api.nuget.org/v3/index.json
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump_type:
+        description: 'Version component to bump'
+        required: true
+        default: patch
+        type: choice
+        options: [major, minor, patch]
+      prerelease:
+        description: 'Pre-release label (empty = stable). e.g. rc.1  beta.2'
+        required: false
+        default: ''
+        type: string
+      dry_run:
+        description: 'Dry run — preview version without pushing or publishing'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  SOLUTION: 'BKM.Utility.sln'
+  PACKAGE_PROJECT: 'src/BKM.Utility/BKM.Utility.csproj'
+  NUPKG_DIR: nupkg
+  PROPS_FILE: 'src/Directory.Build.props'
+  NUGET_FEED_URL: ${{ secrets.NUGET_FEED_URL || 'https://api.nuget.org/v3/index.json' }}
+
+jobs:
+  release:
+    name: Bump version, pack, publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed to push commits + tags and create GitHub Releases
+
+    steps:
+      # ── Checkout (full history for tagging) ───────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── .NET SDK ──────────────────────────────────────────────────────────
+      - name: Setup .NET ${{ env.DOTNET_VERSION }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      # ── Configure git identity for the version-bump commit ────────────────
+      - name: Configure git
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      # ── Read current VersionPrefix from Directory.Build.props ─────────────
+      - name: Read current version
+        id: current
+        run: |
+          VERSION=$(grep -oP '(?<=<VersionPrefix>)[^<]+' ${{ env.PROPS_FILE }})
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Current VersionPrefix: ${VERSION}"
+
+      # ── Compute new VersionPrefix based on bump_type ──────────────────────
+      - name: Compute new version
+        id: newver
+        run: |
+          IFS='.' read -r MAJOR MINOR PATCH <<< "${{ steps.current.outputs.version }}"
+          BUMP="${{ github.event.inputs.bump_type }}"
+          case "$BUMP" in
+            major) MAJOR=$((MAJOR+1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR+1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH+1)) ;;
+          esac
+          NEW_PREFIX="${MAJOR}.${MINOR}.${PATCH}"
+          PRERELEASE="${{ github.event.inputs.prerelease }}"
+          if [ -n "$PRERELEASE" ]; then
+            FULL_VERSION="${NEW_PREFIX}-${PRERELEASE}"
+          else
+            FULL_VERSION="${NEW_PREFIX}"
+          fi
+          echo "prefix=${NEW_PREFIX}"         >> "$GITHUB_OUTPUT"
+          echo "prerelease=${PRERELEASE}"     >> "$GITHUB_OUTPUT"
+          echo "full=${FULL_VERSION}"         >> "$GITHUB_OUTPUT"
+          echo "tag=v${FULL_VERSION}"         >> "$GITHUB_OUTPUT"
+          echo "New version: ${FULL_VERSION}"
+
+      # ── Preview (dry-run stops here) ──────────────────────────────────────
+      - name: Preview (dry run)
+        if: ${{ github.event.inputs.dry_run == 'true' }}
+        run: |
+          echo "──────────────────────────────────────────"
+          echo "DRY RUN — no changes will be committed."
+          echo "  Current : ${{ steps.current.outputs.version }}"
+          echo "  New     : ${{ steps.newver.outputs.full }}"
+          echo "  Tag     : ${{ steps.newver.outputs.tag }}"
+          echo "──────────────────────────────────────────"
+
+      # ── Write new VersionPrefix into Directory.Build.props ────────────────
+      - name: Write new version to Directory.Build.props
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          sed -i "s|<VersionPrefix>[^<]*</VersionPrefix>|<VersionPrefix>${{ steps.newver.outputs.prefix }}</VersionPrefix>|" \
+            ${{ env.PROPS_FILE }}
+          # Clear VersionSuffix for stable releases; set it for pre-releases
+          PRERELEASE="${{ steps.newver.outputs.prerelease }}"
+          if [ -n "$PRERELEASE" ]; then
+            sed -i "s|<VersionSuffix>[^<]*</VersionSuffix>|<VersionSuffix>${PRERELEASE}</VersionSuffix>|" \
+              ${{ env.PROPS_FILE }}
+          else
+            sed -i "s|<VersionSuffix>[^<]*</VersionSuffix>|<VersionSuffix></VersionSuffix>|" \
+              ${{ env.PROPS_FILE }}
+          fi
+          echo "Updated ${{ env.PROPS_FILE }}:"
+          grep -E 'VersionPrefix|VersionSuffix' ${{ env.PROPS_FILE }}
+
+      # ── Commit the version bump ────────────────────────────────────────────
+      - name: Commit version bump
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          git add ${{ env.PROPS_FILE }}
+          git commit -m "chore: bump version to ${{ steps.newver.outputs.full }} [skip ci]"
+          git push
+
+      # ── Create git tag ─────────────────────────────────────────────────────
+      - name: Tag release
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          git tag -a "${{ steps.newver.outputs.tag }}" \
+            -m "Release ${{ steps.newver.outputs.full }}"
+          git push origin "${{ steps.newver.outputs.tag }}"
+
+      # ── Restore ───────────────────────────────────────────────────────────
+      - name: Restore
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: dotnet restore ${{ env.SOLUTION }}
+
+      # ── Build ─────────────────────────────────────────────────────────────
+      - name: Build
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          dotnet build ${{ env.SOLUTION }} \
+            --configuration Release \
+            --no-restore
+
+      # ── Pack ──────────────────────────────────────────────────────────────
+      - name: Pack
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          dotnet pack ${{ env.PACKAGE_PROJECT }} \
+            --configuration Release \
+            --no-build \
+            --output ${{ env.NUPKG_DIR }}
+
+      # ── Push to NuGet ─────────────────────────────────────────────────────
+      - name: Push to NuGet
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          dotnet nuget push "${{ env.NUPKG_DIR }}/*.nupkg" \
+            --source "${{ env.NUGET_FEED_URL }}" \
+            --api-key "${{ secrets.NUGET_API_KEY }}" \
+            --skip-duplicate
+
+      # ── Create GitHub Release with .nupkg attached ───────────────────────
+      - name: Create GitHub Release
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.newver.outputs.tag }}
+          name: ${{ steps.newver.outputs.full }}
+          prerelease: ${{ github.event.inputs.prerelease != '' }}
+          generate_release_notes: true
+          files: ${{ env.NUPKG_DIR }}/*.nupkg

@@ -1,0 +1,41 @@
+<Project>
+
+  <!--
+    ═══════════════════════════════════════════════════════════════════════
+    SINGLE SOURCE OF TRUTH FOR VERSION
+    ═══════════════════════════════════════════════════════════════════════
+    All projects under /src inherit these values automatically.
+    Never set <Version> inside individual .csproj files.
+
+    VersionPrefix  = the stable semantic version  (MAJOR.MINOR.PATCH)
+    VersionSuffix  = pre-release label, empty for a stable release
+                     e.g.  "alpha.1"  "beta.2"  "rc.1"
+
+    The CI pipeline overrides VersionPrefix via:
+        dotnet build -p:VersionPrefix=<computed>
+    The release pipeline additionally clears VersionSuffix for stable releases.
+    ═══════════════════════════════════════════════════════════════════════
+  -->
+
+  <PropertyGroup>
+    <VersionPrefix>1.0.0</VersionPrefix>
+    <VersionSuffix></VersionSuffix>   <!-- set to e.g. "beta.1" for pre-release -->
+
+    <!-- Shared NuGet metadata inherited by every packable project -->
+    <Authors>BKM</Authors>
+    <Company>BKM</Company>
+    <Copyright>Copyright © BKM $([System.DateTime]::UtcNow.Year)</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryType>git</RepositoryType>
+    <!-- Set RepositoryUrl to your actual repo URL, e.g.: -->
+    <!-- <RepositoryUrl>https://github.com/your-org/bkm-integration</RepositoryUrl> -->
+
+    <!-- Embed .pdb symbols inside the .nupkg for debuggability -->
+    <DebugType>embedded</DebugType>
+
+    <!-- Deterministic builds (required for Source Link) -->
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+</Project>

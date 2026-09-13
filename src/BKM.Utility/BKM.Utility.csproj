@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <!-- ── NuGet packaging ─────────────────────────────────────────────── -->
+    <IsPackable>true</IsPackable>
+    <PackageId>BKM.Utility</PackageId>
+    <!-- Version/Authors/License inherited from Directory.Build.props -->
+    <Description>
+      Ready-to-use utility component for .NET 8 applications.
+      Provides Auth (JWT + SSO), Email (SMTP + templates), Feed, File Ingestion,
+      URL Shortener, Encryption, and Structured Logging — all wired up with a
+      single AddBkmUtility(configuration) call.
+    </Description>
+    <PackageTags>bkm;integration;auth;jwt;email;feed;url-shortener;encryption;serilog;efcore;sqlserver</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!-- ── Feature packages (each is self-contained) ────────────────────── -->
+  <ItemGroup>
+    <ProjectReference Include="..\BKM.Utility.Abstractions\BKM.Utility.Abstractions.csproj" PrivateAssets="none" />
+    <ProjectReference Include="..\BKM.Utility.Cache\BKM.Utility.Cache.csproj" PrivateAssets="none" />
+    <ProjectReference Include="..\BKM.Utility.Encryption\BKM.Utility.Encryption.csproj" PrivateAssets="none" />
+    <ProjectReference Include="..\BKM.Utility.Auth\BKM.Utility.Auth.csproj" PrivateAssets="none" />
+    <ProjectReference Include="..\BKM.Utility.Email\BKM.Utility.Email.csproj" PrivateAssets="none" />
+    <ProjectReference Include="..\BKM.Utility.Feed\BKM.Utility.Feed.csproj" PrivateAssets="none" />
+    <ProjectReference Include="..\BKM.Utility.UrlShortener\BKM.Utility.UrlShortener.csproj" PrivateAssets="none" />
+    <ProjectReference Include="..\BKM.Utility.FileIngestion\BKM.Utility.FileIngestion.csproj" PrivateAssets="none" />
+    <ProjectReference Include="..\BKM.Utility.AppLog\BKM.Utility.AppLog.csproj" PrivateAssets="none" />
+  </ItemGroup>
+
+</Project>
