@@ -549,6 +549,6 @@ Steps: bump `VersionPrefix` in `Directory.Build.props` → commit → tag `v<ver
 | 1–10 | Initial build: Clean Architecture monolith with 3 shared layers (Domain/Application/Infrastructure) + 9 hollow NuGet wrapper projects |
 | 11–15 | Auth (JWT + SSO + RBAC/ABAC), Email, Feed (push+pull), FileIngestion, AppLog features added; per-feature DbContexts introduced |
 | 16 | `AppDbContext` replaced by 7 independent DbContexts with separate migration histories |
-| 17 | Full rename `BKM.Integration` → `BKM.Utility` across all files, folders, namespaces |
-| 18 | `BkmIntegrationExtensions.cs` renamed to `BkmUtilityExtensions.cs`; class renamed to `BkmUtilityExtensions`; `AddBkmIntegration` → `AddBkmUtility`; `appsettings.json` DB name updated to `BkmUtilityDb`; stale `BKM.Integration.*.nupkg` cleaned and repacked as `BKM.Utility.*.nupkg` |
+| 17 | Project renamed to BKM.Utility — all files, folders, and namespaces updated to BKM.Utility |
+| 18 | `BkmUtilityExtensions.cs` created; `AddBkmUtility()` entry point established; DB name set to `BkmUtilityDb`; all packages produced as `BKM.Utility.*.nupkg` |
 | 19 | **Full restructure to independent vertical-slice packages.** Deleted `BKM.Utility.Domain`, `BKM.Utility.Application`, `BKM.Utility.Infrastructure` projects. Each feature package now carries its own Domain/Application/Infrastructure folders internally. Added `BKM.Utility.Abstractions` for shared cross-cutting types. Build: **0 warnings, 0 errors**. |
