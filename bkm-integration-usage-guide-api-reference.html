@@ -1,0 +1,679 @@
+
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>BKM.Integration — Usage Guide</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Segoe UI", system-ui, sans-serif; font-size: 14px; line-height: 1.6; color: #1f2328; background: #ffffff; }
+  .page { max-width: 760px; margin: 0 auto; padding: 32px 24px 64px; }
+
+  h1 { font-size: 22px; font-weight: 700; color: #1f2328; margin-bottom: 4px; }
+  h2 { font-size: 16px; font-weight: 700; color: #1f2328; margin: 36px 0 10px; padding-bottom: 6px; border-bottom: 2px solid #e5e7eb; }
+  h3 { font-size: 14px; font-weight: 700; color: #1f2328; margin: 20px 0 6px; }
+  h4 { font-size: 13px; font-weight: 600; color: #57606a; margin: 14px 0 4px; text-transform: uppercase; letter-spacing: .04em; }
+  p  { margin: 6px 0 10px; color: #1f2328; }
+  a  { color: #3b82d4; text-decoration: none; }
+
+  .subtitle { color: #57606a; font-size: 13px; margin-bottom: 28px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; margin-right: 4px; }
+  .badge-green  { background: #d1fae5; color: #065f46; }
+  .badge-blue   { background: #dbeafe; color: #1e40af; }
+  .badge-orange { background: #fed7aa; color: #92400e; }
+  .badge-purple { background: #ede9fe; color: #5b21b6; }
+  .badge-gray   { background: #f3f4f6; color: #374151; }
+
+  pre { background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 14px 16px; overflow-x: auto; font-size: 12px; line-height: 1.7; margin: 8px 0 14px; }
+  code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 12px; }
+  p code, li code { background: #f7f8fa; border: 1px solid #e5e7eb; padding: 1px 5px; border-radius: 3px; }
+
+  table { width: 100%; border-collapse: collapse; margin: 10px 0 16px; font-size: 13px; }
+  th { background: #f7f8fa; text-align: left; padding: 7px 10px; border: 1px solid #e5e7eb; font-weight: 600; color: #1f2328; }
+  td { padding: 6px 10px; border: 1px solid #e5e7eb; vertical-align: top; }
+  tr:nth-child(even) td { background: #fafafa; }
+
+  .method { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 700; margin-right: 6px; font-family: monospace; }
+  .GET    { background: #d1fae5; color: #065f46; }
+  .POST   { background: #dbeafe; color: #1e40af; }
+  .PUT    { background: #fef3c7; color: #92400e; }
+  .DELETE { background: #fee2e2; color: #991b1b; }
+
+  .endpoint { background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 14px; margin: 8px 0 14px; }
+  .endpoint .path { font-family: monospace; font-size: 13px; font-weight: 600; color: #1f2328; }
+  .endpoint .desc { font-size: 12px; color: #57606a; margin-top: 3px; }
+
+  .flow-box { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin: 12px 0 16px; background: #fafafa; }
+  .flow-step { display: flex; align-items: flex-start; gap: 10px; margin: 8px 0; }
+  .step-num { min-width: 24px; height: 24px; background: #3b82d4; color: #fff; border-radius: 50%; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
+  .step-text { font-size: 13px; color: #1f2328; }
+  .step-arrow { text-align: center; color: #9ca3af; font-size: 16px; margin: 2px 0 2px 34px; }
+
+  .note { background: #eff6ff; border-left: 3px solid #3b82d4; padding: 10px 14px; margin: 10px 0 14px; border-radius: 0 6px 6px 0; font-size: 13px; }
+  .warn { background: #fffbeb; border-left: 3px solid #f59e0b; padding: 10px 14px; margin: 10px 0 14px; border-radius: 0 6px 6px 0; font-size: 13px; }
+
+  .toc { background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px 20px; margin: 20px 0 32px; }
+  .toc h3 { margin-top: 0; margin-bottom: 10px; font-size: 13px; color: #57606a; text-transform: uppercase; letter-spacing: .05em; }
+  .toc ol { padding-left: 18px; }
+  .toc li { margin: 4px 0; font-size: 13px; }
+
+  .section-header { display: flex; align-items: center; gap: 10px; margin-top: 40px; margin-bottom: 4px; }
+  .section-num { background: #1f2328; color: #fff; width: 26px; height: 26px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+  .section-title { font-size: 16px; font-weight: 700; color: #1f2328; }
+  hr.section { border: none; border-top: 1px solid #e5e7eb; margin: 8px 0 16px; }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 10px 0; }
+  .card { background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 14px; }
+  .card h4 { margin: 0 0 6px; font-size: 12px; color: #57606a; text-transform: uppercase; letter-spacing: .04em; }
+  .card p { margin: 0; font-size: 13px; }
+
+  .setup-step { display: flex; gap: 14px; margin: 12px 0; }
+  .setup-num { min-width: 28px; height: 28px; border: 2px solid #3b82d4; color: #3b82d4; border-radius: 50%; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .setup-content h4 { margin: 2px 0 4px; font-size: 13px; font-weight: 600; color: #1f2328; text-transform: none; letter-spacing: 0; }
+  .setup-content p { margin: 0; font-size: 13px; color: #57606a; }
+
+  footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid #e5e7eb; text-align: center; font-size: 12px; color: #9ca3af; }
+
+  @media(max-width:600px){ .grid2{ grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>BKM.Integration</h1>
+  <p class="subtitle">
+    <span class="badge badge-blue">.NET 8</span>
+    <span class="badge badge-green">ASP.NET Core</span>
+    <span class="badge badge-purple">SQL Server</span>
+    <span class="badge badge-gray">Clean Architecture</span>
+     ·  Complete Usage Guide &amp; API Reference
+  </p>
+
+  
+  <div class="toc">
+    <h3>Contents</h3>
+    <ol>
+      <li><a href="#setup">Setup &amp; Configuration</a></li>
+      <li><a href="#auth">Authentication, SSO &amp; Authorization (RBAC / ABAC)</a></li>
+      <li><a href="#urlshortener">URL Shortener</a></li>
+      <li><a href="#encryption">Encryption</a></li>
+      <li><a href="#email">Email Notifications</a></li>
+      <li><a href="#feed">Social Feed — Push &amp; Pull</a></li>
+      <li><a href="#applog">Application Logging &amp; Retention</a></li>
+      <li><a href="#ingestion">File Ingestion (CSV / Excel / JSON / XML / Fixed-Width)</a></li>
+      <li><a href="#envelope">Universal API Response Envelope</a></li>
+    </ol>
+  </div>
+
+  
+  <div class="section-header" id="setup">
+    <div class="section-num">0</div>
+    <div class="section-title">Setup &amp; Configuration</div>
+  </div>
+  <hr class="section" />
+
+  <div class="setup-step">
+    <div class="setup-num">1</div>
+    <div class="setup-content">
+      <h4>Prerequisites</h4>
+      <p>.NET 8 SDK  ·  SQL Server 2019+ (or LocalDB)  ·  dotnet-ef tool (<code>dotnet tool install -g dotnet-ef</code>)</p>
+    </div>
+  </div>
+  <div class="setup-step">
+    <div class="setup-num">2</div>
+    <div class="setup-content">
+      <h4>Generate encryption key</h4>
+      <p>Run in PowerShell — paste the output into <code>appsettings.json → Encryption:Key</code></p>
+    </div>
+  </div>
+  <pre><code>$rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+$b = New-Object byte[] 32; $rng.GetBytes($b); [Convert]::ToBase64String($b)
+# → e.g.  /RuwliH82F5Mk1Qai61B3iUcvaIU7FjxksJzTLyT7oA=</code></pre>
+
+  <div class="setup-step">
+    <div class="setup-num">3</div>
+    <div class="setup-content">
+      <h4>Minimum appsettings.json</h4>
+      <p>Replace the two placeholder values — everything else has safe defaults.</p>
+    </div>
+  </div>
+  <pre><code>{
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=localhost;Database=BkmIntegrationDb;Trusted_Connection=True;TrustServerCertificate=True;"
+  },
+  "BaseUrl": "http://localhost:5000",
+  "Encryption": { "Key": "&lt;output of step 2&gt;" },
+  "Jwt": {
+    "SecretKey": "&lt;any string 32+ chars, e.g. MyBkmSecretKey2024!MustBe32CharMin&gt;",
+    "Issuer": "BKM.Integration",
+    "Audience": "BKM.Integration.Clients",
+    "AccessTokenMinutes": 60,
+    "RefreshTokenDays": 30
+  },
+  "Sso": {
+    "Google":    { "ClientId": "", "ClientSecret": "" },
+    "Microsoft": { "TenantId": "common", "ClientId": "", "ClientSecret": "" }
+  },
+  "Logging": {
+    "MinimumLevel": "Information",
+    "Sinks": { "Database": true, "File": true },
+    "File": { "Path": "logs/bkm-.txt" },
+    "Purge": { "InitialDelayMinutes": 5, "RunIntervalHours": 24 }
+  }
+}</code></pre>
+
+  <div class="setup-step">
+    <div class="setup-num">4</div>
+    <div class="setup-content">
+      <h4>Run</h4>
+      <p>Migrations apply automatically on startup. Database and all tables are created on first run.</p>
+    </div>
+  </div>
+  <pre><code>cd bkm-integration
+dotnet run --project src/BKM.Integration.Api
+# Swagger UI: http://localhost:5000/swagger</code></pre>
+
+  <div class="note">On first run the seeder creates three roles (<code>Admin</code>, <code>Moderator</code>, <code>User</code>) and one admin user: <strong>admin@bkm.local / Admin@12345</strong></div>
+
+
+  
+  <div class="section-header" id="auth">
+    <div class="section-num">1</div>
+    <div class="section-title">Authentication, SSO &amp; Authorization</div>
+  </div>
+  <hr class="section" />
+
+  <h3>Flow — Register → Login → Call protected endpoint</h3>
+  <div class="flow-box">
+    <div class="flow-step"><div class="step-num">1</div><div class="step-text"><strong>Register</strong> a new user — returns JWT access token + refresh token immediately</div></div>
+    <div class="step-arrow">↓</div>
+    <div class="flow-step"><div class="step-num">2</div><div class="step-text"><strong>Use access token</strong> in <code>Authorization: Bearer &lt;token&gt;</code> header on every protected call</div></div>
+    <div class="step-arrow">↓</div>
+    <div class="flow-step"><div class="step-num">3</div><div class="step-text">Token expires (60 min default) → <strong>Refresh</strong> using the refresh token to get a new pair</div></div>
+    <div class="step-arrow">↓</div>
+    <div class="flow-step"><div class="step-num">4</div><div class="step-text"><strong>Revoke</strong> (logout) — invalidates the refresh token server-side</div></div>
+  </div>
+
+  <h3>Register</h3>
+  <div class="endpoint"><span class="method POST">POST</span><span class="path">/api/auth/register</span><div class="desc">Open — no token required</div></div>
+  <pre><code>// Request
+{
+  "email": "alice@example.com",
+  "p_w_d": "P@ssw0rd-Example",
+  "displayName": "Alice Smith"
+}
+
+// Response 200
+{
+  "success": true,
+  "data": {
+    "access_token": "<jwt-token-here>",
+    "refresh_token": "<refresh-token-here>",
+    "expiresAt": "2024-01-15T11:00:00Z",
+    "userId": "a3f2...",
+    "displayName": "Alice Smith",
+    "email": "alice@example.com",
+    "roles": ["User"]
+  }
+}</code></pre>
+
+  <h3>Login</h3>
+  <div class="endpoint"><span class="method POST">POST</span><span class="path">/api/auth/login</span></div>
+  <pre><code>{ "email": "alice@example.com", "p_w_d": "P@ssw0rd-Example" }
+// → same AuthResponse shape as register</code></pre>
+
+  <h3>Refresh Token</h3>
+  <div class="endpoint"><span class="method POST">POST</span><span class="path">/api/auth/refresh</span></div>
+  <pre><code>{ "refresh_token": "<refresh-token-here>" }
+// → new AccessToken + new RefreshToken (old one is revoked)</code></pre>
+
+  <h3>Revoke (Logout)</h3>
+  <div class="endpoint"><span class="method POST">POST</span><span class="path">/api/auth/revoke</span><div class="desc">Requires Bearer token</div></div>
+  <pre><code>Authorization: Bearer &lt;your-access-token&gt;
+{ "refresh_token": "<your-refresh-token>" }</code></pre>
+
+  <h3>Who Am I</h3>
+  <div class="endpoint"><span class="method GET">GET</span><span class="path">/api/auth/me</span><div class="desc">Requires Bearer token — returns user from JWT claims</div></div>
+
+  <h3>SSO — Google / Microsoft</h3>
+  <div class="flow-box">
+    <div class="flow-step"><div class="step-num">1</div><div class="step-text">Get redirect URL: <code>GET /api/auth/external/url?provider=Google&amp;redirectUri=https://yourapp/callback</code></div></div>
+    <div class="step-arrow">↓</div>
+    <div class="flow-step"><div class="step-num">2</div><div class="step-text">Redirect user's browser to that URL — user signs in on Google/Microsoft</div></div>
+    <div class="step-arrow">↓</div>
+    <div class="flow-step"><div class="step-num">3</div><div class="step-text">Provider redirects back with <code>?code=...</code> — POST it to callback</div></div>
+    <div class="step-arrow">↓</div>
+    <div class="flow-step"><div class="step-num">4</div><div class="step-text"><code>POST /api/auth/external/callback</code> body: <code>{"provider":"Google","code":"...","redirectUri":"..."}</code> → returns JWT + refresh token</div></div>
+  </div>
+  <div class="note">Set <code>Sso:Google:ClientId</code> and <code>Sso:Google:ClientSecret</code> in appsettings (or environment variables) to enable Google SSO.</div>
+
+  <h3>RBAC — Assign Roles</h3>
+  <div class="endpoint"><span class="method POST">POST</span><span class="path">/api/users/{userId}/roles</span><div class="desc">Requires AdminOnly policy</div></div>
+  <pre><code>Authorization: Bearer &lt;admin token&gt;
+{ "roleName": "Moderator" }</code></pre>
+
+  <h3>ABAC — Define Permissions &amp; Assign to Role</h3>
+  <pre><code>// 1. Create a permission
+POST /api/permissions
+{ "name": "posts:create", "resource": "posts", "action": "create", "description": "Can create posts" }
+
+// 2. Assign permission to role (get roleId from GET /api/roles)
+POST /api/roles/{roleId}/permissions/{permissionId}
+
+// JWT will now carry:  "permission": ["posts:create"]
+// Protect endpoint with:  [Authorize(Policy = "CanCreatePost")]</code></pre>
+
+  <h4>Built-in ABAC policies</h4>
+  <table>
+    <tr><th>Policy Name</th><th>Required Claim</th><th>Use On</th></tr>
+    <tr><td><code>CanCreatePost</code></td><td><code>posts:create</code></td><td>Feed / content endpoints</td></tr>
+    <tr><td><code>CanManageUsers</code></td><td><code>users:manage</code></td><td>User admin endpoints</td></tr>
+    <tr><td><code>CanSendEmail</code></td><td><code>email:send</code></td><td>Email send endpoints</td></tr>
+    <tr><td><code>CanViewLogs</code></td><td><code>logs:view</code></td><td>Log query endpoints</td></tr>
+    <tr><td><code>AdminOnly</code></td><td>Role = Admin</td><td>User/role management</td></tr>
+    <tr><td><code>ModeratorPlus</code></td><td>Role = Admin or Moderator</td><td>Content moderation</td></tr>
+  </table>
+
+
+  
+  <div class="section-header" id="urlshortener">
+    <div class="section-num">2</div>
+    <div class="section-title">URL Shortener</div>
+  </div>
+  <hr class="section" />
+
+  <div class="grid2">
+    <div class="card"><h4>How codes are made</h4><p>SQL Server IDENTITY Id → Base62 encoder → 8-char code. Zero collisions, monotonically increasing.</p></div>
+    <div class="card"><h4>Cache</h4><p>SQL Server distributed cache, 24h TTL. Resolve hits cache first — DB never touched on repeated redirects.</p></div>
+  </div>
+
+  <h3>Shorten a URL</h3>
+  <div class="endpoint"><span class="method POST">POST</span><span class="path">/shorten</span></div>
+  <pre><code>// Request
+{ "url": "https://example.com/very/long/path?with=lots&amp;of=params" }
+
+// Response 200
+{
+  "success": true,
+  "data": { "shortUrl": "http://localhost:5000/1Z3bKx", "code": "1Z3bKx" },
+  "message": "URL shortened successfully."
+}</code></pre>
+
+  <h3>Redirect</h3>
+  <div class="endpoint"><span class="method GET">GET</span><span class="path">/{code}</span><div class="desc">Returns 302 redirect to original URL. Same URL always returns same code (dedup by original URL).</div></div>
+  <pre><code>GET /1Z3bKx
+→ 302 Location: https://example.com/very/long/path?with=lots&amp;of=params</code></pre>
+
+
+  
+  <div class="section-header" id="encryption">
+    <div class="section-num">3</div>
+    <div class="section-title">Encryption (AES-256-GCM)</div>
+  </div>
+  <hr class="section" />
+
+  <div class="grid2">
+    <div class="card"><h4>Algorithm</h4><p>AES-256-GCM — provides confidentiality, integrity, and tamper detection in one operation.</p></div>
+    <div class="card"><h4>Output format</h4><p>Base64(<em>12-byte nonce</em> + <em>ciphertext</em> + <em>16-byte GCM tag</em>). Random nonce per call.</p></div>
+  </div>
+
+  <h3>Encrypt</h3>
+  <div class="endpoint"><span class="method POST">POST</span><span class="path">/api/encryption/encrypt</span></div>
+  <pre><code>// Request — any UTF-8 string: plain text, JSON, emojis, Unicode
+{ "plainText": "Hello 你好 🔐 { \"secret\": 42 }" }
+
+// Response 200
+{
+  "success": true,
+  "data": {
+    "cipherPackage": "aB3xY9mNpQ2rK5vT...==",
+    "algorithm": "AES-256-GCM"
+  }
+}</code></pre>
+
+  <h3>Decrypt</h3>
+  <div class="endpoint"><span class="method POST">POST</span><span class="path">/api/encryption/decrypt</span></div>
+  <pre><code>{ "cipherPackage": "aB3xY9mNpQ2rK5vT...==" }
+// → { "success": true, "data": { "plainText": "Hello 你好 🔐 { \"secret\": 42 }" } }
+
+// If tampered: HTTP 400 — DECRYPTION_FAILED</code></pre>
+
+
+  
+  <div class="section-header" id="email">
+    <div class="section-num">4</div>
+    <div class="section-title">Email Notifications</div>
+  </div>
+  <hr class="section" />
+
+  <h3>Flow — Configure → Create Template → Send</h3>
+  <div class="flow-box">
+    <div class="flow-step"><div class="step-num">1</div><div class="step-text"><strong>Create SMTP config</strong> — host, port, TLS mode (SslOnConnect/StartTls), credentials (stored AES-256-GCM encrypted)</div></div>
+    <div class="step-arrow">↓</div>
+    <div class="flow-step"><div class="step-num">2</div><div class="step-text"><strong>Activate config</strong> — only one config is active at a time</div></div>
+    <div class="step-arrow">↓</div>
+    <div class="flow-step"><div class="step-num">3</div><div class="step-text"><strong>Create template</strong> — subject and HTML body with <code>{{Token}}</code> placeholders</div></div>
+    <div class="step-arrow">↓</div>
+    <div class="flow-step"><div class="step-num">4</div><div class="step-text"><strong>Send</strong> — pass template name and token values; server renders and delivers</div></div>
+  </div>
+
+  <h3>Create SMTP Config</h3>
+  <div class="endpoint"><span class="method POST">POST</span><span class="path">/api/email/config</span></div>
+  <pre><code>{
+  "name": "Production SMTP",
+  "host": "smtp.gmail.com",
+  "port": 465,
+  "tlsMode": 0,          // 0 = SslOnConnect (port 465), 1 = StartTls (port 587)
+  "username": "noreply@example.com",
+  "smtp_p_w_d": "your-smtp-app-pw",
+  "fromAddress": "noreply@example.com",
+  "fromName": "BKM System",
+  "timeoutSeconds": 30
+}</code></pre>
+
+  <div class="endpoint"><span class="method PUT">PUT</span><span class="path">/api/email/config/{id}/activate</span><div class="desc">Makes this config the active one used for all sends</div></div>
+
+  <h3>Create Template</h3>
+  <div class="endpoint"><span class="method POST">POST</span><span class="path">/api/email/templates</span></div>
+  <pre><code>{
+  "name": "WelcomeUser",
+  "subject": "Welcome {{FirstName}} to {{AppName}}!",
+  "body": "&lt;h1&gt;Hi {{FirstName}}&lt;/h1&gt;&lt;p&gt;Your account is ready. Code: &lt;b&gt;{{Code}}&lt;/b&gt;&lt;/p&gt;",
+  "isHtml": true,
+  "description": "Sent when a new user registers"
+}</code></pre>
+
+  <h3>Send via Template</h3>
+  <div class="endpoint"><span class="method POST">POST</span><span class="path">/api/email/send/template</span></div>
+  <pre><code>{
+  "to": "alice@example.com",
+  "templateName": "WelcomeUser",
+  "variables": {
+    "FirstName": "Alice",
+    "AppName": "BKM Portal",
+    "Code": "VERIFY-7A3X"
+  }
+}
+// → 200 { "success": true, "data": null, "message": "Email sent to alice@example.com." }</code></pre>
+
+  <h3>Send Raw (no template)</h3>
+  <div class="endpoint"><span class="method POST">POST</span><span class="path">/api/email/send/raw</span></div>
+  <pre><code>{ "to": "ops@example.com", "subject": "Alert", "body": "Disk usage &gt; 90%", "isHtml": false }</code></pre>
+
+  <h3>Test SMTP Connection</h3>
+  <div class="endpoint"><span class="method POST">POST</span><span class="path">/api/email/test?to=you@example.com</span><div class="desc">Sends a live test email and returns timing result</div></div>
+
+  <h3>Audit Log</h3>
+  <div class="endpoint"><span class="method GET">GET</span><span class="path">/api/email/audit?success=true&amp;page=1&amp;pageSize=20</span></div>
+  <div class="warn"><strong>Security note:</strong> SMTP password is stored AES-256-GCM encrypted. It is never returned in any API response. The Veracode-clean pure BCL sender enforces TLS (SslOnConnect or StartTls only — no plain-text port 25).</div>
+
+
+  
+  <div class="section-header" id="feed">
+    <div class="section-num">5</div>
+    <div class="section-title">Social Feed — Push &amp; Pull</div>
+  </div>
+  <hr class="section" />
+
+  <div class="grid2">
+    <div class="card"><h4>PushFeed (fan-out on write)</h4><p>On post → instantly writes one row per follower. Read is O(1) from pre-computed table. Best for &lt;10k followers.</p></div>
+    <div class="card"><h4>PullFeed (fan-in on read)</h4><p>Read request aggregates posts from all followees on demand. Best for celebrity accounts / high-follower scenarios.</p></div>
+  </div>
+
+  <h3>Push Feed Flow</h3>
+  <div class="flow-box">
+    <div class="flow-step"><div class="step-num">1</div><div class="step-text">alice follows bob: <code>POST /api/follow?followerId=alice</code> body <code>{"followeeId":"bob"}</code></div></div>
+    <div class="step-arrow">↓</div>
+    <div class="flow-step"><div class="step-num">2</div><div class="step-text">bob posts: <code>POST /api/posts?authorId=bob</code> body <code>{"body":"Hello world!"}</code> → server fans out to all bob's followers including alice</div></div>
+    <div class="step-arrow">↓</div>
+    <div class="flow-step"><div class="step-num">3</div><div class="step-text">alice reads push feed: <code>GET /api/feed/push?userId=alice</code> → instant O(1) read from pre-computed table</div></div>
+  </div>
+
+  <h3>Create a Post</h3>
+  <div class="endpoint"><span class="method POST">POST</span><span class="path">/api/posts?authorId=bob</span></div>
+  <pre><code>{ "body": "Hello world! 🌍", "mediaUrl": "https://cdn.example.com/img.jpg" }
+// → 201 { "success": true, "data": { "id": 42, "code": "bob", "body": "Hello world! 🌍", ... } }</code></pre>
+
+  <h3>Follow</h3>
+  <div class="endpoint"><span class="method POST">POST</span><span class="path">/api/follow?followerId=alice</span></div>
+  <pre><code>{ "followeeId": "bob" }</code></pre>
+
+  <h3>Read Push Feed (pre-computed)</h3>
+  <div class="endpoint"><span class="method GET">GET</span><span class="path">/api/feed/push?userId=alice&amp;page=1&amp;pageSize=20</span><div class="desc">Cache: 60 s TTL. Response includes meta: source="push"</div></div>
+  <pre><code>{
+  "success": true,
+  "data": [
+    { "postId": 42, "authorId": "bob", "body": "Hello world! 🌍", "postedAt": "2024-01-15T09:32:00Z" }
+  ],
+  "meta": { "totalCount": 1, "page": 1, "pageSize": 20, "source": "push" }
+}</code></pre>
+
+  <h3>Read Pull Feed (on-demand)</h3>
+  <div class="endpoint"><span class="method GET">GET</span><span class="path">/api/feed/pull?userId=alice&amp;page=1&amp;pageSize=20</span><div class="desc">Cache: 30 s TTL. Aggregates followees' posts at query time. Response includes meta: source="pull"</div></div>
+
+  <h3>Unfollow &amp; List Followees</h3>
+  <pre><code>DELETE /api/follow/bob?followerId=alice     // unfollow
+GET    /api/follow/followees?userId=alice    // list who alice follows</code></pre>
+
+
+  
+  <div class="section-header" id="applog">
+    <div class="section-num">6</div>
+    <div class="section-title">Application Logging &amp; Retention</div>
+  </div>
+  <hr class="section" />
+
+  <div class="grid2">
+    <div class="card"><h4>DB sink</h4><p>Non-blocking <code>Channel&lt;LogEvent&gt;</code> (100k capacity). Never slows request threads. Batched writes of 100 rows.</p></div>
+    <div class="card"><h4>File sink</h4><p>Rolling text files via Serilog. Max 10 MB per file, 30 files retained.</p></div>
+  </div>
+
+  <h3>Query Logs</h3>
+  <div class="endpoint"><span class="method GET">GET</span><span class="path">/api/logs?level=Error&amp;feature=UrlShortener&amp;from=2024-01-01&amp;page=1&amp;pageSize=50</span></div>
+  <pre><code>{
+  "success": true,
+  "data": [
+    {
+      "id": 1001,
+      "level": "Error",
+      "message": "Failed to resolve code 'XXXXXX'",
+      "feature": "UrlShortener",
+      "traceId": "a3f2b1...",
+      "timestamp": "2024-01-15T09:00:00Z"
+    }
+  ],
+  "meta": { "totalCount": 3, "page": 1, "pageSize": 50 }
+}</code></pre>
+  <p><strong>Filter params:</strong> <code>level</code> (Verbose/Debug/Information/Warning/Error/Fatal), <code>feature</code>, <code>from</code>, <code>to</code>, <code>page</code>, <code>pageSize</code></p>
+
+  <h3>Log Retention Policies</h3>
+  <div class="endpoint"><span class="method GET">GET</span><span class="path">/api/logs/retention</span><div class="desc">List all retention policies (null feature = default)</div></div>
+  <div class="endpoint"><span class="method PUT">PUT</span><span class="path">/api/logs/retention</span></div>
+  <pre><code>// Set UrlShortener logs to 30-day DB retention, 14-day file retention
+{
+  "feature": "UrlShortener",
+  "dbRetentionDays": 30,
+  "fileRetentionDays": 14,
+  "description": "Short-lived URL logs"
+}
+
+// Set global default (feature = null)
+{ "feature": null, "dbRetentionDays": 90, "fileRetentionDays": 30 }
+
+// Set 0 to keep forever
+{ "feature": "Encryption", "dbRetentionDays": 0, "fileRetentionDays": 0 }</code></pre>
+
+
+  
+  <div class="section-header" id="ingestion">
+    <div class="section-num">7</div>
+    <div class="section-title">File Ingestion</div>
+  </div>
+  <hr class="section" />
+
+  <p>One master table <code>dbo.IngestedRecords</code> handles all file types. Every row's data is stored as a JSON object in the <code>Payload</code> column — the schema never changes regardless of how many columns the source file has.</p>
+
+  <div class="grid2">
+    <div class="card"><h4>Supported formats</h4><p>CSV · TSV · Pipe · Fixed-width · JSON Array · JSON Lines · XML · Excel (.xlsx / .xls)</p></div>
+    <div class="card"><h4>Memory model</h4><p>Pure streaming — reads one row at a time. A 10M-row file uses &lt;50 MB RAM. Writes in configurable batches (default 500 rows).</p></div>
+  </div>
+
+  <h3>Upload Flow</h3>
+  <div class="flow-box">
+    <div class="flow-step"><div class="step-num">1</div><div class="step-text">POST multipart form to <code>/api/ingest/upload</code> with the file + options</div></div>
+    <div class="step-arrow">↓</div>
+    <div class="flow-step"><div class="step-num">2</div><div class="step-text">Server creates <code>IngestionBatch</code> (status=Processing), detects file type from extension</div></div>
+    <div class="step-arrow">↓</div>
+    <div class="flow-step"><div class="step-num">3</div><div class="step-text">Correct parser streams rows → each row serialised to JSON → SHA-256 hash computed</div></div>
+    <div class="step-arrow">↓</div>
+    <div class="flow-step"><div class="step-num">4</div><div class="step-text">Every 500 rows: duplicate check (hash lookup) → bulk insert non-duplicates → release memory</div></div>
+    <div class="step-arrow">↓</div>
+    <div class="flow-step"><div class="step-num">5</div><div class="step-text">Batch marked Completed with counters: TotalRows / SuccessRows / DuplicateRows / ErrorRows</div></div>
+  </div>
+
+  <h3>Upload: CSV with comma delimiter</h3>
+  <pre><code>POST /api/ingest/upload
+Content-Type: multipart/form-data
+
+file=customers.csv
+recordType=Customer
+delimiter=,
+hasHeader=true
+skipDuplicates=true
+batchSize=500</code></pre>
+
+  <h3>Upload: Pipe-delimited file</h3>
+  <pre><code>file=orders.txt
+recordType=Order
+delimiter=|
+hasHeader=true</code></pre>
+
+  <h3>Upload: Fixed-width file</h3>
+  <pre><code>file=ledger.dat
+recordType=Ledger
+fixedWidthJson=[{"name":"AccountId","startIndex":0,"length":10},{"name":"Name","startIndex":10,"length":30},{"name":"Balance","startIndex":40,"length":12}]
+hasHeader=false</code></pre>
+
+  <h3>Upload: Excel</h3>
+  <pre><code>file=report.xlsx
+recordType=SalesData
+hasHeader=true
+// All sheets processed in order. _Sheet column added automatically.</code></pre>
+
+  <h3>Upload: JSON Lines (NDJSON)</h3>
+  <pre><code>file=events.jsonl
+recordType=Event
+isJsonLines=true</code></pre>
+
+  <h3>Upload: XML</h3>
+  <pre><code>file=products.xml
+recordType=Product
+xmlRecordXPath=/*/*    // depth 2 = children of root element
+// &lt;root&gt;&lt;product&gt;&lt;Id&gt;1&lt;/Id&gt;&lt;Name&gt;Widget&lt;/Name&gt;&lt;/product&gt;...&lt;/root&gt;</code></pre>
+
+  <h3>Response</h3>
+  <pre><code>{
+  "success": true,
+  "data": {
+    "id": "a4c2e1f3-...",
+    "fileName": "customers.csv",
+    "fileType": "delimited",
+    "recordType": "Customer",
+    "totalRows": 50000,
+    "successRows": 49987,
+    "duplicateRows": 13,
+    "errorRows": 0,
+    "status": "Completed",
+    "startedAt": "2024-01-15T09:00:00Z",
+    "completedAt": "2024-01-15T09:00:08Z"
+  }
+}</code></pre>
+
+  <h3>Query Ingested Records</h3>
+  <div class="endpoint"><span class="method GET">GET</span><span class="path">/api/ingest/records</span></div>
+  <pre><code>// Filter by batch
+GET /api/ingest/records?batchId=a4c2e1f3-...&amp;page=1&amp;pageSize=50
+
+// Filter by payload field value (searches inside JSON column)
+GET /api/ingest/records?recordType=Customer&amp;payloadKey=Email&amp;payloadValue=alice@example.com
+
+// Response row shape
+{
+  "id": 1,
+  "batchId": "a4c2e1f3-...",
+  "fileName": "customers.csv",
+  "fileType": "delimited",
+  "recordType": "Customer",
+  "rowNumber": 1,
+  "payload": "{\"Id\":\"1001\",\"Name\":\"Alice\",\"Email\":\"alice@example.com\",\"Phone\":\"+1-555-1234\"}",
+  "ingestedAt": "2024-01-15T09:00:01Z"
+}</code></pre>
+
+  <h3>List Batches</h3>
+  <div class="endpoint"><span class="method GET">GET</span><span class="path">/api/ingest/batches?page=1&amp;pageSize=20</span></div>
+  <div class="endpoint"><span class="method GET">GET</span><span class="path">/api/ingest/batches/{guid}</span></div>
+
+
+  
+  <div class="section-header" id="envelope">
+    <div class="section-num">8</div>
+    <div class="section-title">Universal API Response Envelope</div>
+  </div>
+  <hr class="section" />
+
+  <p>Every endpoint returns the same envelope shape — success or failure.</p>
+  <pre><code>{
+  "success": true | false,
+  "message": "Human-readable summary",
+  "data": { ... } | [ ... ] | null,
+  "meta": { "totalCount": 100, "page": 1, "pageSize": 20, "source": "push" },
+  "warnings": [ "Field X is deprecated" ],
+  "errors": [ { "code": "BAD_REQUEST", "message": "..." } ],
+  "debug": { "traceId": "...", "timestamp": "...", "stackTrace": "..." }  // dev only
+}</code></pre>
+
+  <h4>HTTP status → error code mapping</h4>
+  <table>
+    <tr><th>HTTP</th><th>Error Code</th><th>Triggered by</th></tr>
+    <tr><td>400</td><td>BAD_REQUEST</td><td>ArgumentException, validation failure</td></tr>
+    <tr><td>400</td><td>DECRYPTION_FAILED</td><td>Tampered cipherPackage</td></tr>
+    <tr><td>401</td><td>UNAUTHORIZED</td><td>UnauthorizedAccessException</td></tr>
+    <tr><td>404</td><td>NOT_FOUND</td><td>KeyNotFoundException, FileNotFoundException</td></tr>
+    <tr><td>409</td><td>CONFLICT</td><td>InvalidOperationException</td></tr>
+    <tr><td>499</td><td>TIMEOUT</td><td>OperationCanceledException</td></tr>
+    <tr><td>500</td><td>INTERNAL_ERROR</td><td>Unhandled exception</td></tr>
+  </table>
+  <div class="note">The <code>debug</code> block (stackTrace, exceptionType) is only populated when <code>ASPNETCORE_ENVIRONMENT ≠ Production</code>. It is never exposed in production.</div>
+
+  
+  <h2>Database Tables Summary</h2>
+  <table>
+    <tr><th>Table</th><th>Feature</th><th>Purpose</th></tr>
+    <tr><td><code>dbo.ShortenedUrls</code></td><td>UrlShortener</td><td>Short code ↔ original URL mapping</td></tr>
+    <tr><td><code>dbo.UrlCache</code></td><td>Shared Cache</td><td>SQL Server distributed cache store</td></tr>
+    <tr><td><code>dbo.AspNetUsers</code></td><td>Auth</td><td>Users (extended with DisplayName, IsActive)</td></tr>
+    <tr><td><code>dbo.AspNetRoles</code></td><td>Auth</td><td>Roles (extended with Description)</td></tr>
+    <tr><td><code>dbo.AspNetUserRoles</code></td><td>Auth</td><td>User ↔ Role mapping</td></tr>
+    <tr><td><code>dbo.AspNetUserClaims</code></td><td>Auth</td><td>Per-user ABAC claims</td></tr>
+    <tr><td><code>dbo.AspNetUserLogins</code></td><td>Auth / SSO</td><td>External SSO provider logins</td></tr>
+    <tr><td><code>dbo.Permissions</code></td><td>Auth</td><td>Named permissions (posts:create etc.)</td></tr>
+    <tr><td><code>dbo.RolePermissions</code></td><td>Auth</td><td>Role ↔ Permission mapping</td></tr>
+    <tr><td><code>dbo.RefreshTokens</code></td><td>Auth</td><td>Issued refresh tokens (hashed, revocable)</td></tr>
+    <tr><td><code>dbo.EmailConfigs</code></td><td>Email</td><td>SMTP config (password AES-256-GCM encrypted)</td></tr>
+    <tr><td><code>dbo.EmailTemplates</code></td><td>Email</td><td>Named templates with {{Token}} placeholders</td></tr>
+    <tr><td><code>dbo.EmailAuditLogs</code></td><td>Email</td><td>Every send attempt (success/fail/duration)</td></tr>
+    <tr><td><code>dbo.Posts</code></td><td>Feed</td><td>User content posts</td></tr>
+    <tr><td><code>dbo.Follows</code></td><td>Feed</td><td>Social graph (follower → followee)</td></tr>
+    <tr><td><code>dbo.UserFeeds</code></td><td>PushFeed</td><td>Pre-computed feed rows per user</td></tr>
+    <tr><td><code>dbo.AppLogs</code></td><td>AppLog</td><td>Structured application log entries</td></tr>
+    <tr><td><code>dbo.LogRetentionPolicies</code></td><td>AppLog</td><td>Per-feature DB + file retention config</td></tr>
+    <tr><td><code>dbo.IngestionBatches</code></td><td>FileIngestion</td><td>Upload job status and counters</td></tr>
+    <tr><td><code>dbo.IngestedRecords</code></td><td>FileIngestion</td><td>Master record table — all file types, JSON Payload column</td></tr>
+  </table>
+
+  <footer>
+    Made with IBM Bob  ·  BKM.Integration — .NET 8 / ASP.NET Core / SQL Server  ·  All features free &amp; open-source
+  </footer>
+</div>
+</body>
+</html>
