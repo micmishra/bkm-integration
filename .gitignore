@@ -31,3 +31,7 @@ coverage/
 
 # Publish output
 publish/
+
+# Generated documentation artifacts
+*.html
+src/*.html
